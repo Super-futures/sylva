@@ -32,9 +32,6 @@ The three regulatory mechanisms operate passively and simultaneously:
 - Device-independent bird timing — crossing speed calculated in wall-clock milliseconds, correct at 60 Hz, 120 Hz, or any framerate
 - Works on desktop, tablet, and mobile
 ```bash
-# No installation. Just open the file.
-open sylva.html
-```
 
 ---
 
