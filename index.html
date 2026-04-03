@@ -221,12 +221,10 @@ function getPal(){
 
 // ── SCENE DATA ───────────────────────────────────────────
 let bgTrees=[],midTrees=[],fgTrees=[],ferns=[],rays=[],motes=[],birds=[];
-const ENV_SPD=0.16,ENV_WIND=1.0;
-const IDLE_DRIFT=0.65,IDLE_BS=0.35,IDLE_BI=0.5;
-const CROSS_S={ease:[3.5,5.5],track:[1.5,2.2]};
-const CROSS_IV={ease:5500,track:2200};
+const ENV_WIND=1.0;
+const IDLE_DRIFT=0.65,IDLE_BI=0.5;
 let trackingMode='ease',isSession=false;
-let nextBirdT=0,birdDir=true,nextSpawned=false,lastLead=null;
+let nextBirdT=0,birdDir=true;
 function rnd(a,b){return a+Math.random()*(b-a)}
 
 const TC={
@@ -275,7 +273,7 @@ function buildScene(){
     dr2:rnd(0.0000032,0.0000085),da2:rnd(0.007,0.022)});
   for(let i=0;i<24;i++)motes.push({x:rnd(0,W),y:rnd(H*0.08,H*0.70),r:rnd(0.6,2.8),
     ph:rnd(0,Math.PI*2),sxR:rnd(0.000028,0.000095),syR:rnd(0.000014,0.000055),op:rnd(0.025,0.075)});
-  nextBirdT=0;nextSpawned=false;
+  nextBirdT=0;
 }
 
 // ── PHYSICS UPDATE ───────────────────────────────────────
@@ -343,48 +341,55 @@ function drawFern(ctx,f){
 let birdPanner=null;
 
 // ── BIRD INVARIANTS ──────────────────────────────────────
-// 1. Exactly ONE bird active at a time
+// 1. Exactly ONE bird active at a time — true singular model
 // 2. Strict direction alternation: right → left → right → left
-// 3. Next bird spawns at 75-80% progress — before current exits
-// 4. Single lead bird drives all spawn logic
-// 5. No randomness in timing — position threshold only
-// 6. No multi-bird groups
-
-var SPAWN_THRESHOLD_EASE=0.78;
-var SPAWN_THRESHOLD_TRACK=0.75;
+// 3. Next bird spawns only after previous fully exits — no overlap
+// 4. Deterministic speed (midpoint of range, no randomness in traversal)
+// 5. Fixed vertical position — no per-bird vertical variation
+// 6. Wing articulation (form) preserved; trajectory (motion) is pure horizontal
 
 function spawnBird(goRight){
-  // Apply any deferred state change at spawn boundary
+  // Apply any deferred state change at spawn boundary — bird AND audio transition together
   if(pendingState!==null){
     trackingMode=STATES[pendingState].tracking;
+    // Audio transitions at the same moment as bird mode change — unified field shift
+    if(actx){
+      const s=STATES[pendingState],t=actx.currentTime;
+      gains.drone.gain.setTargetAtTime(s.drone,t,3.5);
+      gains.wind.gain.setTargetAtTime(s.wind,t,3.5);
+      gains.stream.gain.setTargetAtTime(s.stream,t,3.5);
+      gains.shimmer.gain.setTargetAtTime(s.drone*0.28,t,3.5);
+    }
     pendingState=null;
   }
 
-  var _cs=CROSS_S[trackingMode];
-  var c0=_cs[0],c1=_cs[1];
-  var crossMs=(c0+c1)/2*1000;
+  // Crossing duration derived from breath cycle — bird motion aligned to breath rhythm
+  // ease: one crossing = half breath cycle (two crossings per breath = gentle sway)
+  // track: one crossing = quarter breath cycle (four crossings per breath = faster BLS)
+  var crossMs=trackingMode==='ease'?sCycleMs*0.5:sCycleMs*0.25;
+  // Clamp to perceptual range: ease 3.5–7s, track 1.5–3.5s
+  crossMs=trackingMode==='ease'?Math.max(3500,Math.min(7000,crossMs)):Math.max(1500,Math.min(3500,crossMs));
   var pxPerMs=W/crossMs;
   var startX=goRight?-80:W+80;
   var exitX=goRight?W+80:-80;
   var pxPerMsSigned=goRight?pxPerMs:-pxPerMs;
   var sz=trackingMode==='ease'?32:22;
-  var gY=H*rnd(trackingMode==='ease'?0.15:0.28,trackingMode==='ease'?0.52:0.48);
+  // Fixed vertical position — unified across states, no per-bird variation
+  var gY=H*0.35;
   birds.push({
-    x:startX,y:gY,vy:0,
+    x:startX,y:gY,
     pxPerMs:pxPerMsSigned,
-    startX:startX,exitX:exitX,
     wP:rnd(0,Math.PI*2),fR:rnd(0.10,0.14),
-    gP:rnd(0,Math.PI*2),gR:rnd(0.006,0.010),
     sz:sz,lW:0.96,rW:0.92,op:0.88,
-    done:false,isLead:true
+    done:false
   });
   return true;
 }
 
 function drawBird(ctx,b){
   ctx.save();ctx.translate(b.x,b.y);ctx.scale(b.pxPerMs>0?1:-1,1);ctx.globalAlpha=b.op;
-  const gl=Math.sin(b.gP)*0.5+0.5;
-  const wY=-(Math.sin(b.wP)*b.sz*0.58*(1-gl*0.60)+gl*b.sz*0.14);
+  // Wing articulation only — body and head fixed at y=0, no glide deformation of perceived centre
+  const wY=-(Math.sin(b.wP)*b.sz*0.38);
   ctx.fillStyle='rgba(218,210,195,0.92)';
   ctx.save();ctx.rotate(-0.04);
   ctx.beginPath();ctx.ellipse(b.sz*0.07,0,b.sz*0.50,b.sz*0.13,0,0,Math.PI*2);ctx.fill();ctx.restore();
@@ -395,9 +400,9 @@ function drawBird(ctx,b){
   ctx.beginPath();ctx.moveTo(-b.sz*0.03,0);
   ctx.quadraticCurveTo(-b.sz*0.44*b.rW,wY*0.80,-b.sz*0.76*b.rW,wY*0.34);
   ctx.quadraticCurveTo(-b.sz*0.32*b.rW,wY*0.14,-b.sz*0.03,0);ctx.fill();
-  const tD=gl*b.sz*0.08;
+  // Tail fixed — no glide-driven vertical drift
   ctx.beginPath();ctx.moveTo(-b.sz*0.44,0);
-  ctx.lineTo(-b.sz*0.70,b.sz*0.05+tD);ctx.lineTo(-b.sz*0.60,b.sz*0.13+tD);
+  ctx.lineTo(-b.sz*0.70,b.sz*0.05);ctx.lineTo(-b.sz*0.60,b.sz*0.13);
   ctx.closePath();ctx.fill();
   ctx.restore();
 }
@@ -413,16 +418,9 @@ function mainLoop(now){
   palDrift+=0.0000038;palT=0.5+0.48*Math.sin(palDrift)*Math.cos(palDrift*0.37);
   const pal=getPal();const rr=pal.ray[0],rg=pal.ray[1],rb=pal.ray[2];
 
-  const spd=ENV_SPD*(isSession?1.0:IDLE_DRIFT);
-  // Trees are position-locked — no lateral scroll. Only wind physics drives movement.
-  // This removes the continuous directional motion that competed with bird tracking.
-  // On entry screen (not session) allow gentle drift to show the environment is alive.
-  if(!isSession){
-    bgTrees.forEach(t=>{t.scrollX-=spd*0.12;if(t.scrollX<-t.w*0.7)t.scrollX+=W+t.w*1.4});
-    midTrees.forEach(t=>{t.scrollX-=spd*0.40;if(t.scrollX<-t.w*0.7)t.scrollX+=W+t.w*1.4});
-    fgTrees.forEach(t=>{t.scrollX-=spd*0.90;if(t.scrollX<-t.w*0.7)t.scrollX+=W+t.w*1.4});
-    ferns.forEach(f=>{f.scrollX-=spd*0.80;if(f.scrollX<-f.size*0.7)f.scrollX+=W+f.size*1.4});
-  }
+  // Environment is physics-driven in all states — no lateral scroll in any mode.
+  // Entry screen trees move only via wind physics, same as session.
+  // This removes the discontinuity between entry and session environments.
 
   updatePhysics(now);
 
@@ -471,38 +469,34 @@ function mainLoop(now){
   ferns.forEach(f=>drawFern(fgX,f));
   fgTrees.forEach(t=>drawTree(fgX,t));
 
+  // ── BIRD UPDATE ────────────────────────────────────────
+  birds.forEach(b=>{
+    b.x+=b.pxPerMs*dt;b.wP+=b.fR;
+    if(b.x<-(b.sz*2+80)||b.x>W+(b.sz*2+80))b.done=true;
+    else drawBird(fgX,b);
+  });
+  birds=birds.filter(b=>!b.done);
+
   // ── BIRD SCHEDULING ────────────────────────────────────
-  // Invariants:
-  // - Exactly one bird active at a time (lead bird)
-  // - Next bird spawns at 75-80% progress, before current exits
+  // True singular model:
+  // - Exactly one bird active at a time
+  // - Next bird spawns only after previous has fully exited (birds.length === 0)
+  // - Filter runs before scheduling so spawn occurs the same frame as exit
+  // - No threshold-based early spawn, no overlap, no perceptible gap
   // - Strict direction alternation enforced by birdDir flip on every spawn
-  // - No timers, no randomness — position threshold only
 
   if(isSession){
-    var lead=null;
-    for(var bi=0;bi<birds.length;bi++){
-      if(!birds[bi].done){lead=birds[bi];break;}
-    }
-    if(lead){
-      var progress=(lead.x-lead.startX)/(lead.exitX-lead.startX);
-      var spawnThreshold=trackingMode==='track'?SPAWN_THRESHOLD_TRACK:SPAWN_THRESHOLD_EASE;
-      if(!nextSpawned&&progress>=spawnThreshold){
-        var spawned=spawnBird(birdDir);
-        if(spawned){
-          nextSpawned=true;
-          birdDir=!birdDir;
-        }
-        // If guard blocked spawn, leave nextSpawned=false so we retry next frame
-      }
-    } else {
-      // No lead — session just started or recovering; spawn immediately
-      nextSpawned=false;
-      var spawned=spawnBird(birdDir);
-      if(spawned)birdDir=!birdDir;
+    if(birds.length===0){
+      spawnBird(birdDir);
+      birdDir=!birdDir;
+      // Immediately advance the new bird by dt so it appears this frame, not next
+      var nb=birds[birds.length-1];
+      nb.x+=nb.pxPerMs*dt;nb.wP+=nb.fR;
+      if(!(nb.x<-(nb.sz*2+80)||nb.x>W+(nb.sz*2+80)))drawBird(fgX,nb);
     }
   } else {
-    // Idle entry screen — simple timer
-    var bIV=CROSS_IV[trackingMode]/IDLE_BI;
+    // Idle entry screen — simple timer based on breath cycle
+    var bIV=sCycleMs*0.5/IDLE_BI;
     var hasActive=false;
     for(var bj=0;bj<birds.length;bj++){if(!birds[bj].done){hasActive=true;break;}}
     if(!hasActive&&now>=nextBirdT){
@@ -523,16 +517,6 @@ function mainLoop(now){
       }
     }
   }
-
-  var prevCount=birds.length;
-  birds.forEach(b=>{
-    b.x+=b.pxPerMs*dt;b.y+=b.vy;b.wP+=b.fR;b.gP+=b.gR;
-    if(b.x<-(b.sz*2+80)||b.x>W+(b.sz*2+80))b.done=true;
-    else drawBird(fgX,b);
-  });
-  birds=birds.filter(b=>!b.done);
-  // When a bird exits (count decreased), allow the new lead to trigger next spawn
-  if(birds.length<prevCount)nextSpawned=false;
 
   const fg2=fgX.createLinearGradient(0,H*0.68,0,H);
   fg2.addColorStop(0,'rgba(2,8,4,0)');fg2.addColorStop(1,'rgba(2,8,4,0.98)');
@@ -613,26 +597,7 @@ function buildAudio(){
   const shlp=actx.createBiquadFilter();shlp.type='lowpass';shlp.frequency.value=4200;shlp.Q.value=0.28;
   const shg=actx.createGain();shg.gain.value=0.22;
   sh.connect(shp);shp.connect(shlp);shlp.connect(shg);shg.connect(gains.shimmer);sh.start();
-  const hrm=[220,330,440,293,196,165];
-  (function evt(){
-    if(!actx||actx.state==='closed')return;
-    const t=actx.currentTime+rnd(0.2,0.8),base=hrm[Math.floor(Math.random()*hrm.length)]*rnd(0.92,1.08);
-    for(let i=0;i<Math.floor(rnd(1,3));i++){
-      const o=actx.createOscillator(),g=actx.createGain();
-      const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=rnd(550,1100);
-      const dy=actx.createDelay(2.0);dy.delayTime.value=rnd(0.08,0.20);
-      const dg=actx.createGain();dg.gain.value=0.30;
-      o.type='triangle';
-      o.frequency.setValueAtTime(base*rnd(0.91,1.09),t+i*0.14);
-      o.frequency.exponentialRampToValueAtTime(base*rnd(0.58,1.38),t+i*0.14+rnd(0.12,0.38));
-      g.gain.setValueAtTime(0,t+i*0.14);
-      g.gain.linearRampToValueAtTime(rnd(0.007,0.016),t+i*0.14+0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.14+rnd(0.28,0.75));
-      o.connect(lp);lp.connect(g);g.connect(actx.destination);g.connect(dy);dy.connect(dg);dg.connect(actx.destination);
-      o.start(t+i*0.14);o.stop(t+i*0.14+1.1);
-    }
-    setTimeout(evt,rnd(14000,48000));
-  })();
+  // Shimmer: continuous filtered noise texture only — no event-based oscillator triggers
   birdPanner=actx.createStereoPanner();
   const bn=actx.createBufferSource();bn.buffer=noiseBuffer(3);bn.loop=true;
   const bbp=actx.createBiquadFilter();bbp.type='bandpass';bbp.frequency.value=600;bbp.Q.value=0.45;
@@ -667,18 +632,9 @@ const STATES={
 };
 
 function setState(state){
-  // Audio transitions immediately — smooth, non-disruptive
   document.getElementById('tr-ease').classList.toggle('on',state==='ease');
   document.getElementById('tr-deep').classList.toggle('on',state==='deep');
-  if(actx){
-    const s=STATES[state],t=actx.currentTime;
-    gains.drone.gain.setTargetAtTime(s.drone,t,2.2);
-    gains.wind.gain.setTargetAtTime(s.wind,t,2.2);
-    gains.stream.gain.setTargetAtTime(s.stream,t,2.2);
-    gains.shimmer.gain.setTargetAtTime(s.drone*0.28,t,2.2);
-  }
-  // Tracking mode change is deferred — applied only at the next spawn boundary
-  // This prevents: speed mismatch, double-spawn, crossing paths
+  // All changes deferred to next spawn boundary — bird and audio shift as a unified field
   pendingState=state;
 }
 
@@ -709,14 +665,12 @@ function enterForest(){
   isSession=true;
   breathT=0;lastBTS=null;sCycleMs=tCycleMs;
   breathWave=0;lightWave=0;soundWave=0;motionWave=0;microV=0;
-  birds=[];birdDir=true;nextSpawned=false;lastLead=null;pendingState=null;
+  birds=[];birdDir=true;pendingState=null;
   const now=performance.now();
   if(spawnBird(birdDir))birdDir=!birdDir;
   const g1=document.getElementById('g1'),g2=document.getElementById('g2'),g3=document.getElementById('g3');
   g1.classList.remove('on');g2.classList.remove('on');g3.classList.remove('on');g3.textContent='';
-  setTimeout(()=>g1.classList.add('on'),600);
-  setTimeout(()=>g2.classList.add('on'),1800);
-  setTimeout(()=>{g1.classList.remove('on');g2.classList.remove('on')},5500);
+  // Guidance text removed — environment guides attention without language
   clearTimeout(iwT);scheduleIW();
 }
 
