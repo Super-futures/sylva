@@ -363,12 +363,13 @@ function spawnBird(goRight){
     pendingState=null;
   }
 
-  // Crossing duration derived from breath cycle — bird motion aligned to breath rhythm
-  // ease: one crossing = half breath cycle (two crossings per breath = gentle sway)
-  // track: one crossing = quarter breath cycle (four crossings per breath = faster BLS)
-  var crossMs=trackingMode==='ease'?sCycleMs*0.5:sCycleMs*0.25;
-  // Clamp to perceptual range: ease 3.5–7s, track 1.5–3.5s
-  crossMs=trackingMode==='ease'?Math.max(3500,Math.min(7000,crossMs)):Math.max(1500,Math.min(3500,crossMs));
+  // Crossing duration — recalibrated for stronger engagement and clearer mode separation.
+  // Ease:  2800–4200 ms — baseline shifted upward; attention captures readily, no drift.
+  // Deep:  1000–1600 ms — directive tracking rhythm; ~2.5–3× faster than Ease.
+  // Both modes remain smooth and effortless to track at all times.
+  var crossMs=trackingMode==='ease'
+    ? Math.max(2800,Math.min(4200,sCycleMs*0.5))
+    : Math.max(1000,Math.min(1600,sCycleMs*0.25));
   var pxPerMs=W/crossMs;
   var startX=goRight?-80:W+80;
   var exitX=goRight?W+80:-80;
