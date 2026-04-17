@@ -1,5 +1,5 @@
 # Sylva
-A browser-based ambient forest environment for nervous system regulation, using passive bilateral visual stimulation, breath entrainment, and layered nature audio — no instructions, no compliance required.
+A forest for the nervous system. Browser-based, ambient, no instructions required.
 
 ---
 
