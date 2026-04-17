@@ -363,13 +363,13 @@ function spawnBird(goRight){
     pendingState=null;
   }
 
-  // Crossing duration — recalibrated for stronger engagement and clearer mode separation.
-  // Ease:  2800–4200 ms — baseline shifted upward; attention captures readily, no drift.
-  // Deep:  1000–1600 ms — directive tracking rhythm; ~2.5–3× faster than Ease.
-  // Both modes remain smooth and effortless to track at all times.
-  var crossMs=trackingMode==='ease'
-    ? Math.max(2800,Math.min(4200,sCycleMs*0.5))
-    : Math.max(1000,Math.min(1600,sCycleMs*0.25));
+  // Crossing duration derived from breath cycle — bird motion aligned to breath rhythm
+  // ease: one crossing = quarter breath cycle (default hypnotic speed)
+  // track: one crossing = eighth breath cycle (faster active entrainment)
+  var crossMs=trackingMode==='ease'?sCycleMs*0.5:sCycleMs*0.25;
+  // ease: current Deep speed (hypnotic default), track: new faster Deep
+  // Clamp to perceptual range: ease 1.5–3.5s, track 0.6–1.4s
+  crossMs=trackingMode==='ease'?Math.max(1500,Math.min(3500,crossMs)):Math.max(600,Math.min(1400,crossMs));
   var pxPerMs=W/crossMs;
   var startX=goRight?-80:W+80;
   var exitX=goRight?W+80:-80;
@@ -389,21 +389,35 @@ function spawnBird(goRight){
 
 function drawBird(ctx,b){
   ctx.save();ctx.translate(b.x,b.y);ctx.scale(b.pxPerMs>0?1:-1,1);ctx.globalAlpha=b.op;
-  // Wing articulation only — body and head fixed at y=0, no glide deformation of perceived centre
-  const wY=-(Math.sin(b.wP)*b.sz*0.38);
+  const s=b.sz;
+  // Wing beat: one wing up, one down for natural flap asymmetry
+  const wY=Math.sin(b.wP)*s*0.42;
   ctx.fillStyle='rgba(218,210,195,0.92)';
-  ctx.save();ctx.rotate(-0.04);
-  ctx.beginPath();ctx.ellipse(b.sz*0.07,0,b.sz*0.50,b.sz*0.13,0,0,Math.PI*2);ctx.fill();ctx.restore();
-  ctx.beginPath();ctx.arc(b.sz*0.50,-b.sz*0.04,b.sz*0.09,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.moveTo(-b.sz*0.03,0);
-  ctx.quadraticCurveTo(-b.sz*0.50*b.lW,wY*0.88,-b.sz*0.86*b.lW,wY*0.40);
-  ctx.quadraticCurveTo(-b.sz*0.38*b.lW,wY*0.18,-b.sz*0.03,0);ctx.fill();
-  ctx.beginPath();ctx.moveTo(-b.sz*0.03,0);
-  ctx.quadraticCurveTo(-b.sz*0.44*b.rW,wY*0.80,-b.sz*0.76*b.rW,wY*0.34);
-  ctx.quadraticCurveTo(-b.sz*0.32*b.rW,wY*0.14,-b.sz*0.03,0);ctx.fill();
-  // Tail fixed — no glide-driven vertical drift
-  ctx.beginPath();ctx.moveTo(-b.sz*0.44,0);
-  ctx.lineTo(-b.sz*0.70,b.sz*0.05);ctx.lineTo(-b.sz*0.60,b.sz*0.13);
+  // Body — compact, slightly tapered, angled upward toward head
+  ctx.save();ctx.rotate(-0.06);
+  ctx.beginPath();
+  ctx.ellipse(s*0.04,0,s*0.28,s*0.09,0,0,Math.PI*2);
+  ctx.fill();ctx.restore();
+  // Head — clearly proud of body, raised slightly above body centreline
+  ctx.beginPath();ctx.arc(s*0.28,-s*0.10,s*0.10,0,Math.PI*2);ctx.fill();
+  // Beak — short pointed forward projection
+  ctx.beginPath();ctx.moveTo(s*0.36,-s*0.10);
+  ctx.lineTo(s*0.52,-s*0.08);ctx.lineTo(s*0.36,-s*0.04);
+  ctx.closePath();ctx.fill();
+  // Left wing — sweeps back and upward
+  ctx.beginPath();ctx.moveTo(s*0.08,-s*0.04);
+  ctx.quadraticCurveTo(-s*0.18*b.lW,-s*0.08+wY*0.9,-s*0.52*b.lW,wY*0.55);
+  ctx.quadraticCurveTo(-s*0.18*b.lW,s*0.06+wY*0.2,s*0.08,-s*0.04);
+  ctx.fill();
+  // Right wing — slightly shorter, staggered phase
+  ctx.beginPath();ctx.moveTo(s*0.08,-s*0.04);
+  ctx.quadraticCurveTo(-s*0.14*b.rW,-s*0.06+wY*0.7,-s*0.44*b.rW,wY*0.40);
+  ctx.quadraticCurveTo(-s*0.14*b.rW,s*0.05+wY*0.15,s*0.08,-s*0.04);
+  ctx.fill();
+  // Tail — forked, pointed, clearly distinct from wings
+  ctx.beginPath();ctx.moveTo(-s*0.18,-s*0.02);
+  ctx.lineTo(-s*0.46,-s*0.12);ctx.lineTo(-s*0.38,s*0.01);
+  ctx.lineTo(-s*0.46,s*0.12);ctx.lineTo(-s*0.18,s*0.04);
   ctx.closePath();ctx.fill();
   ctx.restore();
 }
@@ -545,7 +559,7 @@ function breathLoop(ts){
   const sl=STATES[trackingMode==='track'?'deep':'ease'];
   if(actx&&gains.drone){
     gains.drone.gain.setTargetAtTime(sl.drone*(0.55+exh*0.88),actx.currentTime,1.3);
-    if(dOsc)dOsc.frequency.setTargetAtTime(dOsc._bf+inh*7+dDrift,actx.currentTime,2.8);
+    if(dOsc)dOsc.frequency.setTargetAtTime(dOsc._bf+inh*3+dDrift,actx.currentTime,2.8);
   }
   if(actx&&gains.wind)gains.wind.gain.setTargetAtTime(sl.wind*(0.60+exh*0.68),actx.currentTime,1.9);
   if(actx&&gains.stream&&sFilt){
@@ -569,10 +583,12 @@ function buildAudio(){
   if(actx)return;
   actx=new(window.AudioContext||window.webkitAudioContext)();
   ['drone','wind','stream','shimmer'].forEach(k=>{gains[k]=actx.createGain();gains[k].gain.value=0;gains[k].connect(actx.destination)});
-  [{f:98,pan:-0.26,rel:1.0},{f:101,pan:0.26,rel:1.0},{f:147,pan:0,rel:0.26},{f:196,pan:0,rel:0.14},{f:72,pan:0,rel:0.09}].forEach(s=>{
+  // D Dorian: D2=73.4, A2=110, F2=87.3, D3=146.8, A3=220
+  // Pairs slightly detuned for warm beating. Upper partials reduced to avoid spooky brightness.
+  [{f:73,pan:-0.26,rel:1.0},{f:74,pan:0.26,rel:1.0},{f:110,pan:0,rel:0.32},{f:87,pan:-0.15,rel:0.22},{f:55,pan:0,rel:0.12}].forEach(s=>{
     const o=actx.createOscillator();o.type='triangle';o.frequency.value=s.f;o._bf=s.f;
     const lfo=actx.createOscillator(),lg=actx.createGain();
-    lfo.frequency.value=rnd(0.044,0.066);lg.gain.value=rnd(260,460);
+    lfo.frequency.value=rnd(0.028,0.048);lg.gain.value=rnd(80,140);
     lfo.connect(lg);lg.connect(o.detune);lfo.start();
     const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=360;lp.Q.value=0.55;
     const pan=actx.createStereoPanner();pan.pan.value=s.pan;
@@ -580,8 +596,8 @@ function buildAudio(){
     o.connect(lp);lp.connect(rg);rg.connect(pan);pan.connect(gains.drone);o.start();
     if(!dOsc)dOsc=o;
   });
-  let dt=0;const r1=rnd(0.00008,0.00014),r2=rnd(0.00020,0.00035);
-  (function tick(){dt+=0.016;dDrift=Math.sin(dt*r1)*7+Math.sin(dt*r2)*3.5;setTimeout(tick,16)})();
+  let dt=0;const r1=rnd(0.00006,0.00010),r2=rnd(0.00015,0.00025);
+  (function tick(){dt+=0.016;dDrift=Math.sin(dt*r1)*3+Math.sin(dt*r2)*1.5;setTimeout(tick,16)})();
   const ws=actx.createBufferSource();ws.buffer=noiseBuffer(6);ws.loop=true;
   const wl1=actx.createBiquadFilter();wl1.type='lowpass';wl1.frequency.value=260;wl1.Q.value=0.5;
   const wl2=actx.createBiquadFilter();wl2.type='lowpass';wl2.frequency.value=140;wl2.Q.value=0.4;
@@ -622,12 +638,12 @@ let pendingState=null;
 const STATES={
   ease:{
     tracking:'ease',
-    drone:0.017,wind:0.011,stream:0.009,
+    drone:0.011,wind:0.007,stream:0.006,
     windAmp:1.0
   },
   deep:{
     tracking:'track',
-    drone:0.032,wind:0.022,stream:0.018,
+    drone:0.020,wind:0.014,stream:0.011,
     windAmp:1.3
   }
 };
