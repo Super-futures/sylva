@@ -366,7 +366,7 @@ function spawnBird(goRight){
   // Crossing duration derived from breath cycle — bird motion aligned to breath rhythm
   // ease: one crossing = quarter breath cycle (default hypnotic speed)
   // track: one crossing = eighth breath cycle (faster active entrainment)
-  var crossMs=trackingMode==='ease'?sCycleMs*0.5:sCycleMs*0.25;
+  var crossMs=trackingMode==='ease'?sCycleMs*0.125:sCycleMs*0.08;
   // ease: current Deep speed (hypnotic default), track: new faster Deep
   // Clamp to perceptual range: ease 1.5–3.5s, track 0.6–1.4s
   crossMs=trackingMode==='ease'?Math.max(1500,Math.min(3500,crossMs)):Math.max(600,Math.min(1400,crossMs));
@@ -398,11 +398,11 @@ function drawBird(ctx,b){
   ctx.beginPath();
   ctx.ellipse(s*0.04,0,s*0.28,s*0.09,0,0,Math.PI*2);
   ctx.fill();ctx.restore();
-  // Head — clearly proud of body, raised slightly above body centreline
-  ctx.beginPath();ctx.arc(s*0.28,-s*0.10,s*0.10,0,Math.PI*2);ctx.fill();
+  // Head — sits at front of body, slight raise
+  ctx.beginPath();ctx.arc(s*0.22,-s*0.06,s*0.09,0,Math.PI*2);ctx.fill();
   // Beak — short pointed forward projection
-  ctx.beginPath();ctx.moveTo(s*0.36,-s*0.10);
-  ctx.lineTo(s*0.52,-s*0.08);ctx.lineTo(s*0.36,-s*0.04);
+  ctx.beginPath();ctx.moveTo(s*0.29,-s*0.06);
+  ctx.lineTo(s*0.43,-s*0.04);ctx.lineTo(s*0.29,-s*0.01);
   ctx.closePath();ctx.fill();
   // Left wing — sweeps back and upward
   ctx.beginPath();ctx.moveTo(s*0.08,-s*0.04);
