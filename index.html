@@ -370,6 +370,8 @@ function spawnBird(goRight){
   // ease: current Deep speed (hypnotic default), track: new faster Deep
   // Clamp to perceptual range: ease 1.5–3.5s, track 0.6–1.4s
   crossMs=trackingMode==='ease'?Math.max(1500,Math.min(3500,crossMs)):Math.max(600,Math.min(1400,crossMs));
+  // Idle entry screen — always slow and gentle, independent of session mode
+  if(!isSession)crossMs=5000;
   var pxPerMs=W/crossMs;
   var startX=goRight?-80:W+80;
   var exitX=goRight?W+80:-80;
@@ -583,14 +585,17 @@ function buildAudio(){
   if(actx)return;
   actx=new(window.AudioContext||window.webkitAudioContext)();
   ['drone','wind','stream','shimmer'].forEach(k=>{gains[k]=actx.createGain();gains[k].gain.value=0;gains[k].connect(actx.destination)});
-  // D Dorian: D2=73.4, A2=110, F2=87.3, D3=146.8, A3=220
-  // Pairs slightly detuned for warm beating. Upper partials reduced to avoid spooky brightness.
-  [{f:73,pan:-0.26,rel:1.0},{f:74,pan:0.26,rel:1.0},{f:110,pan:0,rel:0.32},{f:87,pan:-0.15,rel:0.22},{f:55,pan:0,rel:0.12}].forEach(s=>{
+  // D Dorian drone stack — overtone/throat singing character
+  // Sub fundamentals (D1=36.7, A1=55) felt more than heard — physical grounding
+  // D2/A2 pair as the main body, upper partials kept low
+  [{f:37,pan:0,rel:1.4},{f:55,pan:0,rel:1.2},
+   {f:73,pan:-0.22,rel:1.0},{f:74,pan:0.22,rel:1.0},
+   {f:110,pan:0,rel:0.28},{f:87,pan:-0.12,rel:0.18}].forEach(s=>{
     const o=actx.createOscillator();o.type='triangle';o.frequency.value=s.f;o._bf=s.f;
     const lfo=actx.createOscillator(),lg=actx.createGain();
     lfo.frequency.value=rnd(0.028,0.048);lg.gain.value=rnd(80,140);
     lfo.connect(lg);lg.connect(o.detune);lfo.start();
-    const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=360;lp.Q.value=0.55;
+    const lp=actx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=480;lp.Q.value=0.4;
     const pan=actx.createStereoPanner();pan.pan.value=s.pan;
     const rg=actx.createGain();rg.gain.value=s.rel;
     o.connect(lp);lp.connect(rg);rg.connect(pan);pan.connect(gains.drone);o.start();
@@ -599,10 +604,10 @@ function buildAudio(){
   let dt=0;const r1=rnd(0.00006,0.00010),r2=rnd(0.00015,0.00025);
   (function tick(){dt+=0.016;dDrift=Math.sin(dt*r1)*3+Math.sin(dt*r2)*1.5;setTimeout(tick,16)})();
   const ws=actx.createBufferSource();ws.buffer=noiseBuffer(6);ws.loop=true;
-  const wl1=actx.createBiquadFilter();wl1.type='lowpass';wl1.frequency.value=260;wl1.Q.value=0.5;
-  const wl2=actx.createBiquadFilter();wl2.type='lowpass';wl2.frequency.value=140;wl2.Q.value=0.4;
+  const wl1=actx.createBiquadFilter();wl1.type='lowpass';wl1.frequency.value=180;wl1.Q.value=0.5;
+  const wl2=actx.createBiquadFilter();wl2.type='lowpass';wl2.frequency.value=90;wl2.Q.value=0.4;
   const wlfo=actx.createOscillator(),wlg=actx.createGain();
-  wlfo.frequency.value=0.036;wlg.gain.value=0.11;wlfo.connect(wlg);wlg.connect(gains.wind.gain);wlfo.start();
+  wlfo.frequency.value=0.036;wlg.gain.value=0.04;wlfo.connect(wlg);wlg.connect(gains.wind.gain);wlfo.start();
   ws.connect(wl1);wl1.connect(wl2);wl2.connect(gains.wind);ws.start();
   const ss=actx.createBufferSource();ss.buffer=noiseBuffer(5);ss.loop=true;
   sFilt=actx.createBiquadFilter();sFilt.type='bandpass';sFilt.frequency.value=290;sFilt.Q.value=0.42;
@@ -621,10 +626,11 @@ function buildAudio(){
   const bg2=actx.createGain();bg2.gain.value=0.003;
   bn.connect(bbp);bbp.connect(bg2);bg2.connect(birdPanner);birdPanner.connect(actx.destination);bn.start();
   const ano=actx.currentTime,lvl=STATES.ease;
-  gains.drone.gain.linearRampToValueAtTime(lvl.drone,ano+10);
-  gains.wind.gain.linearRampToValueAtTime(lvl.wind,ano+10);
-  gains.stream.gain.linearRampToValueAtTime(lvl.stream,ano+10);
-  gains.shimmer.gain.linearRampToValueAtTime(lvl.drone*0.28,ano+14);
+  // Exponential fade-in — drone leads slightly, all layers overlap for a seamless emergence
+  gains.drone.gain.setTargetAtTime(lvl.drone,ano+0.1,3.5);
+  gains.wind.gain.setTargetAtTime(lvl.wind,ano+1.5,4.5);
+  gains.stream.gain.setTargetAtTime(lvl.stream,ano+2.0,4.5);
+  gains.shimmer.gain.setTargetAtTime(lvl.drone*0.28,ano+2.5,5.0);
 }
 
 // ── CONTROLS ─────────────────────────────────────────────
@@ -638,12 +644,12 @@ let pendingState=null;
 const STATES={
   ease:{
     tracking:'ease',
-    drone:0.011,wind:0.007,stream:0.006,
+    drone:0.018,wind:0.004,stream:0.005,
     windAmp:1.0
   },
   deep:{
     tracking:'track',
-    drone:0.020,wind:0.014,stream:0.011,
+    drone:0.032,wind:0.008,stream:0.009,
     windAmp:1.3
   }
 };
